@@ -1,0 +1,10 @@
+# 兩台電腦接力開發：統一換行字元，避免整個檔案被 git 當成有改動
+* text=auto eol=lf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+*.onnx binary
+*.db   binary
+*.jpg  binary
+*.png  binary
+*.heic binary

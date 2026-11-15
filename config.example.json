@@ -1,0 +1,245 @@
+{
+  "paths": {
+    "db_path": "data/photos.db",
+    "weights_dir": "weights",
+    "cache_dir": "data/cache",
+    "log_dir": "data/logs"
+  },
+  "db": {
+    "cache_size_kb": 65536,
+    "mmap_size_mb": 256,
+    "busy_timeout_ms": 5000,
+    "wal_autocheckpoint_pages": 1000,
+    "journal_size_limit_mb": 64,
+    "synchronous": "NORMAL",
+    "write_queue_size": 4096,
+    "write_batch_max_ops": 256,
+    "enable_sqlite_vec": false
+  },
+  "runtime": {
+    "providers": "auto",
+    "device_id": 0,
+    "decode_workers": 0,
+    "intra_op_threads": 0,
+    "queue_maxsize": 64,
+    "batch_size": 0,
+    "batch_timeout_ms": 200,
+    "warmup": true
+  },
+  "scan": {
+    "extensions": [
+      "jpg",
+      "jpeg",
+      "png",
+      "webp",
+      "bmp",
+      "tif",
+      "tiff",
+      "heic",
+      "heif"
+    ],
+    "raw_extensions": [
+      "dng",
+      "cr2",
+      "cr3",
+      "nef",
+      "arw",
+      "raf",
+      "orf",
+      "rw2"
+    ],
+    "enable_raw": false,
+    "follow_symlinks": false,
+    "skip_hidden": true,
+    "exclude_dir_names": [
+      "$RECYCLE.BIN",
+      "System Volume Information",
+      ".thumbnails",
+      "@eaDir"
+    ],
+    "min_file_size": 1024,
+    "retry_errors": false
+  },
+  "decode": {
+    "work_long_edge": 1280,
+    "blur_long_edge": 1024,
+    "face_det_size": 640,
+    "siglip_size": 224,
+    "jpeg_draft": true,
+    "max_pixels": 250000000
+  },
+  "screenshot": {
+    "name_patterns": [
+      "screenshot",
+      "screen shot",
+      "screen_shot",
+      "screencapture",
+      "screen capture",
+      "螢幕擷取畫面",
+      "螢幕快照",
+      "螢幕截圖",
+      "截圖",
+      "擷取",
+      "snipaste",
+      "snip_"
+    ],
+    "screen_resolutions": [
+      [
+        1920,
+        1080
+      ],
+      [
+        2560,
+        1440
+      ],
+      [
+        3840,
+        2160
+      ],
+      [
+        1366,
+        768
+      ],
+      [
+        1536,
+        864
+      ],
+      [
+        1920,
+        1200
+      ],
+      [
+        2560,
+        1600
+      ],
+      [
+        2880,
+        1800
+      ],
+      [
+        3440,
+        1440
+      ],
+      [
+        1170,
+        2532
+      ],
+      [
+        1179,
+        2556
+      ],
+      [
+        1284,
+        2778
+      ],
+      [
+        1290,
+        2796
+      ],
+      [
+        1125,
+        2436
+      ],
+      [
+        1242,
+        2688
+      ],
+      [
+        1080,
+        1920
+      ],
+      [
+        1080,
+        2340
+      ],
+      [
+        1080,
+        2400
+      ],
+      [
+        1440,
+        3120
+      ],
+      [
+        1440,
+        3200
+      ]
+    ]
+  },
+  "siglip": {
+    "model_name": "siglip-base-patch16-224",
+    "vision": {
+      "file": "siglip/vision_model.onnx",
+      "input_name": "pixel_values",
+      "output_name": "pooler_output",
+      "fixed_batch": 0
+    },
+    "text": {
+      "file": "siglip/text_model.onnx",
+      "input_name": "input_ids",
+      "output_name": "pooler_output",
+      "fixed_batch": 0
+    },
+    "tokenizer_file": "siglip/tokenizer.json",
+    "embed_dim": 768,
+    "max_text_len": 64,
+    "pad_token_id": 1,
+    "mean": [
+      0.5,
+      0.5,
+      0.5
+    ],
+    "std": [
+      0.5,
+      0.5,
+      0.5
+    ],
+    "logit_scale": 117.3308,
+    "logit_bias": -12.9324,
+    "prompt_template": "a photo of {}.",
+    "default_threshold": 0.2
+  },
+  "face": {
+    "model_name": "buffalo_l",
+    "detector": {
+      "file": "buffalo_l/det_10g.onnx",
+      "input_name": "",
+      "output_name": "",
+      "fixed_batch": 1
+    },
+    "recognizer": {
+      "file": "buffalo_l/w600k_r50.onnx",
+      "input_name": "",
+      "output_name": "",
+      "fixed_batch": 0
+    },
+    "embed_dim": 512,
+    "det_threshold": 0.5,
+    "nms_threshold": 0.4,
+    "min_face_px": 32,
+    "max_faces_per_photo": 32,
+    "cluster_algorithm": "dbscan",
+    "cluster_eps": 0.45,
+    "cluster_min_samples": 3
+  },
+  "events": {
+    "gap_minutes": 180,
+    "max_distance_km": 30.0,
+    "min_photos": 3
+  },
+  "pipeline": {
+    "stages": [
+      "meta",
+      "siglip",
+      "faces"
+    ],
+    "geocode": true,
+    "cluster_events": true,
+    "progress_interval_ms": 150
+  },
+  "export": {
+    "path_template": "{year}/{year}-{month}/{filename}",
+    "conflict_policy": "skip_identical",
+    "verify_copy": true
+  }
+}

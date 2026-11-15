@@ -1,0 +1,6 @@
+# NVIDIA CUDA 環境。需要與 onnxruntime-gpu 版本相符的 CUDA 12.x 與 cuDNN 9.x 執行期函式庫。
+# CUDA 函式庫缺少時 onnxruntime 不會報錯而是靜默退回 CPU；
+# 本專案的 create_session() 會檢查實際生效的 provider 並在日誌標明，用 `python -m photosorter doctor` 確認。
+
+-r requirements-base.txt
+onnxruntime-gpu==1.24.4

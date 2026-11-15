@@ -1,0 +1,4 @@
+# 開發與測試用。測試本身只用標準函式庫 unittest，pytest 只是比較好用的 runner。
+pytest==9.2.0
+# tests/test_onnx_runtime.py 用它當場產生極小的 ONNX 模型；沒裝時那一組測試會自動略過。
+onnx==1.23.2

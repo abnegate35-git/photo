@@ -1,0 +1,4 @@
+# 純 CPU 環境（沒有可用顯示卡，或只想跑測試）。
+
+-r requirements-base.txt
+onnxruntime==1.24.4

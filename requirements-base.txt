@@ -1,0 +1,20 @@
+# 共用相依（不含 onnxruntime）。不要直接安裝這份，請依硬體選下列其中一份：
+#   requirements.txt          -> DirectML（Windows 10 1903+ / 11，任何 DX12 顯示卡，預設）
+#   requirements-cuda.txt     -> NVIDIA CUDA
+#   requirements-cpu.txt      -> 純 CPU
+# 三種 onnxruntime 發行版互斥（都提供同一個 `onnxruntime` 模組），同一個環境只能裝一種。
+#
+# 驗證紀錄（Python 3.13.13, win_amd64）：
+#   requirements.txt（DirectML）   在乾淨的 venv 實際安裝並跑完全部測試。
+#   requirements-cuda / -cpu.txt   只確認過 pip 能解析出 cp313 的 wheel，沒有實際安裝執行。
+
+numpy==2.4.4
+opencv-python-headless==4.14.0.94
+pillow==12.2.0
+pillow-heif==1.8.1
+ImageHash==4.3.2
+scikit-learn==1.9.1
+scipy==1.18.1
+reverse_geocoder==1.5.1
+tokenizers==0.23.2
+psutil==7.2.2

@@ -1,0 +1,47 @@
+# ---- 模型權重（體積大、有授權條款，由 B 電腦自行下載，見 weights/README.md）----
+weights/**
+!weights/README.md
+!weights/.gitkeep
+*.onnx
+*.onnx.data
+
+# ---- 執行期資料：資料庫、快取、日誌（照片庫內容屬個人資料，絕不進版控）----
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite
+*.sqlite3
+data/**
+!data/.gitkeep
+
+# ---- 本機設定（各電腦的路徑與硬體不同；範本是 config.example.json）----
+config.json
+config.local.json
+.env
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.pyd
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---- 打包產物 ----
+build/
+dist/
+*.spec.bak
+
+# ---- 編輯器與作業系統 ----
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store

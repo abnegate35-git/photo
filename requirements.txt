@@ -1,0 +1,12 @@
+# 預設環境：DirectML（含 CPU fallback）。任何廠牌的 DX12 顯示卡都能加速。
+# 目標電腦（B）是 Windows 10：DirectML 需要 Windows 10 1903 (build 18362) 以上與 DX12 驅動；
+# 不符合時不會報錯，create_session() 會自動降級到 CPU，用 `python -m photosorter doctor` 確認。
+#   python -m venv .venv
+#   .venv\Scripts\python -m pip install -r requirements.txt
+#
+# NVIDIA 顯示卡且已裝好 CUDA/cuDNN -> 改用 requirements-cuda.txt
+# 沒有可用的顯示卡                 -> 改用 requirements-cpu.txt
+# 換發行版前要先 `pip uninstall -y onnxruntime onnxruntime-directml onnxruntime-gpu`。
+
+-r requirements-base.txt
+onnxruntime-directml==1.24.4
