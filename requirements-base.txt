@@ -18,3 +18,5 @@ scipy==1.18.1
 reverse_geocoder==1.5.1
 tokenizers==0.23.2
 psutil==7.2.2
+# GUI 的深色主題。沒裝也能跑：介面會自動退回 ttk 內建的 clam 主題加深色配色。
+sv-ttk==2.6.1

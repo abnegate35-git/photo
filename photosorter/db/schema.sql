@@ -1,5 +1,5 @@
 -- ============================================================================
--- photosorter schema  (PRAGMA user_version = 1)
+-- photosorter schema  (PRAGMA user_version = 2)
 --
 -- 約定
 --   * 時間戳一律 INTEGER epoch 秒。
@@ -108,6 +108,11 @@ CREATE TABLE photos (
     dup_group_id    INTEGER,                      -- 近似重複群（dHash 漢明距離）
     event_id        INTEGER REFERENCES events(id) ON DELETE SET NULL,
 
+    -- 連拍（v2；由 utils.clustering.EventClusterEngine 每次重算）
+    burst_group_id      INTEGER,                  -- 同一組連拍共用群內最小的 photo id；非連拍為 NULL
+    is_best_shot        INTEGER NOT NULL DEFAULT 0,   -- 該組綜合評分最高的一張
+    is_burst_duplicate  INTEGER NOT NULL DEFAULT 0,   -- 該組其餘的次佳照片
+
     -- 管線狀態
     process_status  INTEGER NOT NULL DEFAULT 0,   -- core.status.ProcessStatus 位元
     error_count     INTEGER NOT NULL DEFAULT 0,
@@ -135,6 +140,7 @@ CREATE INDEX idx_photos_rejected ON photos(id) WHERE is_rejected = 1;
 CREATE INDEX idx_photos_shot     ON photos(id) WHERE is_screenshot = 1;
 CREATE INDEX idx_photos_missing  ON photos(id) WHERE is_missing = 1;
 CREATE INDEX idx_photos_camera   ON photos(camera_model) WHERE camera_model IS NOT NULL;
+CREATE INDEX idx_photos_burst    ON photos(burst_group_id) WHERE burst_group_id IS NOT NULL;
 
 CREATE TRIGGER trg_photos_touch AFTER UPDATE ON photos
 WHEN NEW.updated_at = OLD.updated_at
@@ -202,6 +208,7 @@ CREATE TABLE persons (
     centroid       BLOB,                          -- 該群特徵的平均（再正規化），增量指派用
     face_count     INTEGER NOT NULL DEFAULT 0,
     is_hidden      INTEGER NOT NULL DEFAULT 0,    -- 路人，UI 不顯示
+    is_locked      INTEGER NOT NULL DEFAULT 0,    -- v2：使用者鎖定，重新分群不可覆蓋或拆散
     created_at     INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at     INTEGER NOT NULL DEFAULT (unixepoch())
 );

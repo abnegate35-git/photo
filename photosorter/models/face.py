@@ -163,6 +163,24 @@ class InsightFaceAnalyzer:
         return min(face.bbox[2] * w, face.bbox[3] * h)
 
 
+def is_implemented() -> bool:
+    """人臉階段是否已經實作完成（`decode_scrfd` 與 `align_face` 不再是骨架）。
+
+    GUI 與 `factory.resolve_stages()` 用它決定要不要把 `faces` 階段排進管線：還是骨架時直接
+    略過這個階段，而不是讓整條管線跑到一半以 `NotImplementedError` 失敗。
+    以空輸入試呼叫來判斷 —— 骨架會丟 `NotImplementedError`；實作完成後對空輸入不論回傳
+    空結果或丟別的例外，都視為已實作。
+    """
+    try:
+        decode_scrfd([], 0.5, 0.4)
+        align_face(np.zeros((8, 8, 3), dtype=np.uint8), np.zeros((5, 2), dtype=np.float32))
+    except NotImplementedError:
+        return False
+    except Exception:  # noqa: BLE001
+        return True
+    return True
+
+
 # --------------------------------------------------------------------------- #
 # TODO（B 電腦實作，需以真實權重驗證）
 # --------------------------------------------------------------------------- #

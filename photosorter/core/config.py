@@ -171,15 +171,15 @@ class FaceConfig:
     nms_threshold: float = 0.4
     min_face_px: int = 32               # 在工作圖上小於此邊長的臉不取特徵（特徵品質太差會污染分群）
     max_faces_per_photo: int = 32
-    # 分群（models/clustering.py）
+    # 分群（utils/clustering.py 的 FaceClusterEngine）
     cluster_algorithm: str = "dbscan"   # "dbscan" | "hdbscan"
-    cluster_eps: float = 0.45           # cosine distance
+    cluster_eps: float = 0.38           # DBSCAN 的 cosine distance 半徑
     cluster_min_samples: int = 3
 
 
 @dataclass
 class EventConfig:
-    gap_minutes: int = 180              # 相鄰兩張照片時間差超過此值 -> 切開成新事件
+    gap_minutes: int = 360              # 相鄰兩張照片時間差小於此值（6 小時）-> 同一事件
     max_distance_km: float = 30.0       # 兩張都有 GPS 且距離超過此值 -> 也切開
     min_photos: int = 3                 # 少於此張數的群不成立事件（event_id 留 NULL）
 

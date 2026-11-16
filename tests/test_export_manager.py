@@ -33,7 +33,8 @@ def tree(root: Path) -> set[str]:
 class ExportManagerTest(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
-        self.tmp = Path(self._tmp.name)
+        # realpath：暫存資料夾可能是 8.3 短路徑，而引擎會把路徑正規化成長路徑
+        self.tmp = Path(os.path.realpath(self._tmp.name))
         self.lib = self.tmp / "library"
         self.dest = self.tmp / "sorted"
         self.cfg = make_config(self.tmp, pipeline={"stages": ["meta"], "geocode": False, "cluster_events": False})

@@ -219,11 +219,11 @@
     "min_face_px": 32,
     "max_faces_per_photo": 32,
     "cluster_algorithm": "dbscan",
-    "cluster_eps": 0.45,
+    "cluster_eps": 0.38,
     "cluster_min_samples": 3
   },
   "events": {
-    "gap_minutes": 180,
+    "gap_minutes": 360,
     "max_distance_km": 30.0,
     "min_photos": 3
   },

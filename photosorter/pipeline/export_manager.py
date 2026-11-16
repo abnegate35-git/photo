@@ -46,6 +46,7 @@ from ..core.types import ConflictPolicy, ExportMode, ExportPlan, ExportResult, P
 from ..db.db_manager import DBManager
 from ..db.repository import Repository
 from ..utils.hashing import sha256_file
+from .scanner import normalize_root
 
 log = logging.getLogger(__name__)
 
@@ -142,7 +143,8 @@ class ExportManager:
         mode = ExportMode(mode)
         policy = ConflictPolicy(conflict_policy or self._cfg.export.conflict_policy)
         template = template or self._cfg.export.path_template
-        root = os.path.normpath(os.path.abspath(os.fspath(dest_root)))
+        # 與掃描器用同一套正規化（還原 8.3 短檔名與實際大小寫）：move 之後 photos.path 會指到這底下
+        root = normalize_root(dest_root)
         plan = ExportPlan(mode=mode, dest_root=root, template=template, conflict_policy=policy)
 
         if mode is ExportMode.SYMLINK and not can_symlink():

@@ -1,10 +1,16 @@
-"""Headless 命令列介面。核心不需要 GUI 就能完整運作，這裡同時是 GUI 接線方式的活範例。
+"""套件入口：不帶參數啟動 GUI；帶子命令則是 Headless 命令列介面（核心不需要 GUI 就能完整運作）。
 
+    python -m photosorter                            啟動桌面介面（等同 `gui`）
+    python -m photosorter gui
     python -m photosorter doctor [--load-models]     環境檢查（新電腦 clone 後先跑這個）
     python -m photosorter scan <資料夾>... [--stages meta,siglip,faces]
     python -m photosorter stats
-    python -m photosorter export <目標資料夾> [--mode copy|move|hardlink|symlink] [--template T] [--execute]
+    python -m photosorter plan <目標資料夾> [--mode copy|move|hardlink|symlink] [--template T]     自訂模板匯出的預覽
+    python -m photosorter execute <目標資料夾> [--mode ...] [--template T]                        自訂模板匯出（真的執行）
+    python -m photosorter export <目標資料夾> [...] [--execute]                                   同上兩者：不加 --execute 是預覽
+    python -m photosorter archive <匯出根目錄> [--mode copy|move|hardlink] [--execute]    四層多視圖歸檔
     python -m photosorter rollback <batch_id>
+    python -m photosorter verify-archive <匯出根目錄>                                   檢查視圖是否為硬連結、實際佔用空間
     python -m photosorter dump-config -o config.example.json    由程式裡的預設值重新產生設定範本
 
 共通選項：`--config <路徑>`（預設讀專案根目錄的 config.json，沒有就全用預設值）。
@@ -201,15 +207,70 @@ def cmd_export(args: argparse.Namespace) -> int:
         return 0 if result.failed == 0 else 1
 
 
+def cmd_archive(args: argparse.Namespace) -> int:
+    """四層多視圖歸檔（實體主庫 + 人物/標籤硬連結視圖 + 待清理隔離區）。"""
+    from .pipeline.factory import create_app
+
+    with create_app(args.config) as ctx:
+        preview = ctx.exporter.preview_export(args.dest, mode=args.mode, blur_threshold=args.blur_threshold,
+                                              include_views=not args.no_views)
+        for w in preview.warnings:
+            _print(f"[警告] {w}")
+        for key, n in sorted(preview.summary().items()):
+            _print(f"  {key:<44} {n}")
+        free = "未知" if preview.free_bytes is None else f"{preview.free_bytes / 2**30:.2f} GB"
+        _print(f"  預估新增佔用空間 {preview.estimated_bytes / 2**30:.3f} GB（匯出磁碟區可用 {free}）")
+        for a in preview.pending()[: args.preview]:
+            _print(f"  {a.role:<12}{a.op_type:<9}{a.src}  ->  {a.dst}")
+        if not args.execute:
+            _print("\n以上是預覽（dry-run），沒有動到任何檔案。加上 --execute 才會真的執行。")
+            return 0
+        result = ctx.exporter.execute_export(preview)
+        _print(f"\n批次 {result.batch_id}：完成 {result.done}，略過 {result.skipped}，失敗 {result.failed}"
+               f"（回復：python -m photosorter rollback {result.batch_id}）")
+        for src, message in result.errors[:20]:
+            _print(f"  失敗 {src}: {message}")
+        return 0 if result.failed == 0 else 1
+
+
+def cmd_verify_archive(args: argparse.Namespace) -> int:
+    """檢查四層歸檔：視圖是否都是主庫檔案的硬連結，以及實際佔用的空間。只讀取，不需要資料庫。"""
+    from .core.export_manager import verify_archive
+
+    r = verify_archive(args.dest)
+    gb = 2 ** 30
+    _print(f"匯出根目錄        {r.export_root}")
+    _print(f"01 主庫檔案       {r.master_files}")
+    _print(f"99 隔離區檔案     {r.staging_files}")
+    _print(f"02/03 視圖連結    {r.view_links}")
+    _print(f"各路徑大小加總    {r.apparent_bytes / gb:.3f} GB（檔案總管顯示的數字，硬連結被重複計算）")
+    _print(f"實際佔用空間      {r.physical_bytes / gb:.3f} GB")
+    _print(f"硬連結省下        {r.saved_bytes / gb:.3f} GB")
+    if r.ok:
+        _print("結果：所有視圖都是主庫檔案的硬連結（零額外空間）")
+        return 0
+    _print(f"結果：{len(r.broken_views)} 個視圖檔不是主庫檔案的硬連結：")
+    for path in r.broken_views[:20]:
+        _print(f"  {path}")
+    return 1
+
+
 def cmd_rollback(args: argparse.Namespace) -> int:
     from .pipeline.factory import create_app
 
     with create_app(args.config) as ctx:
-        result = ctx.exporter.rollback(args.batch_id)
+        result = ctx.exporter.rollback_batch(args.batch_id)      # export 與 archive 的批次都適用
         _print(f"批次 {result.batch_id}：已還原 {result.done}，無法還原 {result.failed}")
         for path, message in result.errors[:20]:
             _print(f"  {path}: {message}")
         return 0 if result.failed == 0 else 1
+
+
+def cmd_gui(args: argparse.Namespace) -> int:
+    """啟動桌面介面。tkinter 與 GUI 模組到這裡才 import，純 CLI 的使用情境不需要它們。"""
+    from .ui.app import run_gui
+
+    return run_gui(args.config)
 
 
 def cmd_dump_config(args: argparse.Namespace) -> int:
@@ -228,7 +289,10 @@ def cmd_dump_config(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="photosorter", description="本地離線照片智慧分類（核心引擎 CLI）")
     parser.add_argument("--config", help="設定檔路徑（預設：專案根目錄的 config.json）")
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command")              # 不帶子命令 = 啟動 GUI
+
+    p = sub.add_parser("gui", help="啟動桌面介面（不帶任何子命令時的預設行為）")
+    p.set_defaults(func=cmd_gui)
 
     p = sub.add_parser("doctor", help="檢查環境、硬體、相依套件與模型權重")
     p.add_argument("--load-models", action="store_true", help="實際建立 ONNX session，確認生效的 provider")
@@ -244,13 +308,35 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("stats", help="照片庫統計")
     p.set_defaults(func=cmd_stats)
 
-    p = sub.add_parser("export", help="依分類結果匯出（預設只預覽）")
-    p.add_argument("dest", help="目標根目錄")
-    p.add_argument("--mode", default="copy", choices=["copy", "move", "hardlink", "symlink"])
-    p.add_argument("--template", help="路徑模板，例如 {year}/{event}/{filename}")
+    # 自訂模板的單層匯出：plan = 只預覽，execute = 真的執行，export = 兩者合一（以 --execute 切換）
+    for name, text, execute in (
+        ("plan", "自訂模板匯出的預覽（dry-run，不動任何檔案）", False),
+        ("execute", "自訂模板匯出：真的執行", True),
+        ("export", "自訂模板匯出（預設只預覽；加 --execute 才執行）", None),
+    ):
+        p = sub.add_parser(name, help=text)
+        p.add_argument("dest", help="目標根目錄")
+        p.add_argument("--mode", default="copy", choices=["copy", "move", "hardlink", "symlink"])
+        p.add_argument("--template", help="路徑模板，例如 {year}/{event}/{filename}")
+        p.add_argument("--preview", type=int, default=20, help="預覽時列出前幾筆")
+        if execute is None:
+            p.add_argument("--execute", action="store_true", help="真的執行（不加就是 dry-run）")
+            p.set_defaults(func=cmd_export)
+        else:
+            p.set_defaults(func=cmd_export, execute=execute)
+
+    p = sub.add_parser("archive", help="四層多視圖歸檔：主庫 + 人物/標籤硬連結視圖（預設只預覽）")
+    p.add_argument("dest", help="匯出根目錄")
+    p.add_argument("--mode", default="copy", choices=["copy", "move", "hardlink"], help="主庫的放置方式")
+    p.add_argument("--blur-threshold", type=float, help="blur_score 低於此值也視為模糊（預設只採用已標為廢片的）")
+    p.add_argument("--no-views", action="store_true", help="不建立人物與標籤視圖")
     p.add_argument("--preview", type=int, default=20, help="預覽時列出前幾筆")
     p.add_argument("--execute", action="store_true", help="真的執行（不加就是 dry-run）")
-    p.set_defaults(func=cmd_export)
+    p.set_defaults(func=cmd_archive)
+
+    p = sub.add_parser("verify-archive", help="檢查四層歸檔的視圖是否為硬連結，並回報實際佔用空間")
+    p.add_argument("dest", help="匯出根目錄")
+    p.set_defaults(func=cmd_verify_archive)
 
     p = sub.add_parser("rollback", help="還原一個匯出批次")
     p.add_argument("batch_id", type=int)
@@ -261,6 +347,8 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(func=cmd_dump_config)
 
     args = parser.parse_args(argv)
+    if args.command is None:
+        return cmd_gui(args)
     return int(args.func(args))
 
 

@@ -7,7 +7,7 @@
 ```
 photo/
 ├── photosorter/                 Python 套件（Headless Core，不 import 任何 GUI）
-│   ├── __main__.py              CLI：doctor / scan / stats / export / rollback / dump-config
+│   ├── __main__.py              CLI：doctor / scan / stats / archive / export / rollback / dump-config
 │   ├── core/                    零相依的基礎：設定、型別、介面、事件、硬體探測
 │   │   ├── paths.py             專案根目錄與路徑解析（唯一決定檔案位置的地方）
 │   │   ├── config.py            設定 dataclass 與載入（預設值的唯一來源）
@@ -15,29 +15,36 @@ photo/
 │   │   ├── types.py             模組間傳遞的封包（DecodedImageTask、InferenceResult…）
 │   │   ├── interfaces.py        Protocol 介面契約與執行緒契約
 │   │   ├── events.py            EventBus / EventQueue（核心 → UI 的唯一通道）
-│   │   └── hardware.py          延遲硬體探測、provider 降級順序、RuntimePlan
+│   │   ├── hardware.py          延遲硬體探測、provider 降級順序、RuntimePlan
+│   │   └── export_manager.py    四層多視圖歸檔（第二階段；應用層服務，見下方說明）
 │   ├── db/
 │   │   ├── schema.sql           完整 DDL
 │   │   ├── db_manager.py        單一寫入執行緒 + thread-local 唯讀連線
 │   │   ├── repository.py        所有業務 SQL
-│   │   └── vector_index.py      記憶體內 cosine 檢索
+│   │   ├── vector_index.py      記憶體內 cosine 檢索
+│   │   └── queries_ui.py        GUI 專用查詢（導航樹計數、照片清單、人物命名鎖定、匯出歷史）
 │   ├── models/                  只有這裡會碰 onnxruntime
 │   │   ├── onnx_runtime.py      session 建立、provider 自動降級、OnnxModel
 │   │   ├── preprocess.py        batch 前處理框架與各模型的正規化參數
 │   │   ├── siglip.py            vision / text encoder、多標籤判定、全庫重標
-│   │   ├── face.py              SCRFD + ArcFace（骨架）
-│   │   └── clustering.py        人臉分群（骨架）
+│   │   └── face.py              SCRFD + ArcFace（骨架）
 │   ├── pipeline/
 │   │   ├── pipeline_engine.py   調度引擎：佇列、batching、暫停/停止、續掃
 │   │   ├── scanner.py           Stage 0：走訪資料夾並與資料庫比對
 │   │   ├── decoder.py           Single-Decode Multi-Resize + Stage 1
 │   │   ├── metadata.py          EXIF 解析、截圖判定
-│   │   ├── event_clustering.py  時間密度事件聚類
-│   │   ├── export_manager.py    非破壞性匯出：dry-run / 執行 / 回復
+│   │   ├── event_clustering.py  最小版事件聚類（EventClusterer 介面的參考實作）
+│   │   ├── export_manager.py    自訂模板的單層匯出，也是四層歸檔的底層：dry-run / 執行 / 回復
 │   │   └── factory.py           組裝（介面與具體實作唯一綁定的地方）
 │   ├── utils/                   imageops、hashing、geo、logging_setup
-│   └── ui/
-│       └── bridge.py            TkEventPump（GUI 之後放在這個套件）
+│   │   └── clustering.py        人臉分群、事件分群、連拍偵測（第二階段；應用層服務）
+│   └── ui/                      桌面介面（第三階段）
+│       ├── app.py               run_gui()：啟動入口
+│       ├── main_window.py       三欄式主視窗；每 100 ms 輪詢背景佇列
+│       ├── thumbnail_grid.py    虛擬滾動照片牆、LRU 快取、背景載入縮圖
+│       ├── dialogs.py           人物命名、匯出預覽、復原歷史
+│       ├── theme.py             高 DPI、sv-ttk / clam 深色、Tk 視窗的安全釋放
+│       └── bridge.py            TkEventPump（給其他以 Tk 為底的介面用）
 ├── tests/                       unittest（pytest 也能跑）；fakes.py 是假模型
 ├── docs/ARCHITECTURE.md         本文件
 ├── weights/                     模型權重（不進版控）
@@ -48,7 +55,9 @@ photo/
 └── AGENTS.md / CLAUDE.md        給接手的 AI agent 的入口
 ```
 
-相依方向是單向的：`core` ← `db` ← `models` ← `pipeline` ← `ui`。`core` 不 import 其他任何子套件；`pipeline_engine.py` 只認得 `core.interfaces` 裡的 Protocol，不 import `models/` 的具體類別（由 `factory.py` 注入）。
+相依方向是單向的：`core` ← `db` ← `models` ← `pipeline` ← `ui`。`core` 的基礎模組不 import 其他任何子套件；`pipeline_engine.py` 只認得 `core.interfaces` 裡的 Protocol，不 import `models/` 的具體類別（由 `factory.py` 注入）。
+
+**兩個例外**：`core/export_manager.py` 與 `utils/clustering.py` 是第二階段依指定位置放的應用層服務，它們會讀寫資料庫，所以相依方向與所在的資料夾不同 —— 兩者都依賴 `db/`，`core/export_manager.py` 還繼承了 `pipeline/export_manager.py`。請把它們當成位在相依鏈頂端（與 `pipeline/factory.py` 同層）的模組：基礎模組（`core/config.py`、`core/types.py`、`db/`…）不可以反過來 import 它們。
 
 ## 2. 資料流
 
@@ -82,7 +91,7 @@ photo/
 | Stage 1 | `decoder.py` | 尺寸、EXIF、截圖判定、dHash、blur_score | `HASHED｜META｜QUALITY` |
 | Stage 2 | `_stage2` | SigLIP 影像向量、多標籤 | `EMBEDDED｜TAGGED` |
 | Stage 3 | `_stage3` | 條件式人臉偵測與特徵 | `FACES`（略過時另加 `FACES_SKIPPED`） |
-| 後處理 | `_run_post_steps` | 離線地理編碼、事件聚類、（待掛載）人臉分群 | `GEOCODED` |
+| 後處理 | `_run_post_steps` | 依序：離線地理編碼 → 事件分群與命名 → 連拍偵測 → 人臉分群 | `GEOCODED` |
 
 ## 3. 關鍵設計決定
 
@@ -159,6 +168,58 @@ WAL 模式允許一個寫入者與多個讀取者並行，但同時只能有一�
 
 在 `ExportManager.execute()` 之前，本工具對原始檔案是唯讀的。匯出有三步：`plan()`（dry-run，不碰檔案系統也不寫資料庫）→ `execute()`（每筆操作先寫日誌再動檔案）→ `rollback()`。絕不覆寫既有檔案。安全守則列在 `pipeline/export_manager.py` 開頭。
 
+### 3.11 分群（第二階段）
+
+`utils/clustering.py` 的兩個引擎都是全域後處理，直接讀寫資料庫，可以重複執行。
+
+**人臉**（`FaceClusterEngine`）預設是增量的：只處理還沒指派的臉。先以目前的成員算出每個既有人物的中心向量，新的臉與中心向量的 cosine similarity 達 0.65 就直接歸入；沒命中的才跑 `DBSCAN(eps=0.38, min_samples=3, metric="cosine")` 產生新人物。這樣使用者整理過的人物不會因為重跑而變動，DBSCAN 的 O(N²) 也只作用在新的臉上。`full_recluster=True` 會把未保護的自動群組解散重分；已命名、已鎖定的人物與手動指派的臉在任何模式下都不動，而且寫入的 SQL 本身帶保護條件。
+
+**事件**（`EventClusterEngine`）是相鄰照片的分段：時間差小於 6 小時就同一段；超過的話，如果還在同一個城市或距離小於 30 公里、而且空檔不到 36 小時，視為同一趟行程。後面這條規則在常駐城市（有照片的天數最多的城市）不適用，否則每天在家拍照會被串成一個長達數月的事件。分完之後替自動事件產生預設名稱 `YYYY-MM-DD_{City}_{TopTag}`。
+
+**連拍**：相鄰兩張時間差小於 3 秒且 dHash 漢明距離不超過 4 就串成一組，以清晰度與人臉偵測信心度評分選出最佳照片。
+
+### 3.12 四層多視圖歸檔（第二階段）
+
+`core/export_manager.py` 把分類結果實體化成「單一實體主庫 + 硬連結視圖」：
+
+```
+<export_root>/
+├── 01_Timeline_Master/{Year}/{日期}_{City}_{EventName}/    唯一一份實體資料
+├── 02_By_Person/{PersonName}/…                             硬連結
+├── 03_By_Semantic_Tag/{TagName}/                           硬連結
+└── 99_Review_Staging/_Blurry_Suspects｜_Burst_Duplicates｜_Screenshots_Downloads/
+```
+
+- 視圖一律**從主庫的新檔案**建立硬連結，所以和主庫永遠在同一個磁碟區：即使原始相簿在另一顆硬碟、主庫只能用複製，視圖仍然不佔空間。
+- 檔名是 `{Date}_{Time}_{SubSec}_{DeviceOrTag}_{ShortHash}.{ext}`。ShortHash 是 SHA-256 的前 6 碼，讓重複匯出可以直接認出「這個檔案已經在了」而略過；前綴與 6 碼都相同但完整 SHA-256 不同時才加 `_v2`。
+- 判斷「目標位置的同名檔案是不是同一個內容」先查 `export_logs`（主檔那一筆記有完整 SHA-256），日誌沒有紀錄才比大小與重新計算雜湊。同一份日誌也讓照片在重複匯出時留在第一次放的位置，事件改名不會在主庫多出一份。
+- 每張照片的主檔與它的 Sidecar（Live Photo 影片、RAW、XMP…）是一個不可分割的群組：一起執行、共用新檔名主幹，任何一筆失敗就整組還原。視圖失敗只影響那一個連結。
+- 它繼承第一階段的匯出引擎，所以 write-ahead 日誌、暫存檔再 rename、絕不覆寫、回復前的身分確認、當機後的 `recover()` 都是同一套。`export_logs` 裡只有主檔記 `photo_id`，Sidecar 與視圖留 NULL，回復 MOVE 時才不會把 Sidecar 的路徑寫回 `photos.path`。
+
+### 3.13 桌面介面（第三階段）
+
+主執行緒只做三件事：畫畫面、處理使用者操作、每 100 ms 輪詢兩個佇列。
+
+```
+工作執行緒                                  Tk 主執行緒
+PipelineEngine ──EventBus──▶ EventQueue ─┐
+_run_bg(fn) ────結果───────▶ _ui_queue ──┴─▶ self.after(100, self._poll_events) ─▶ 更新 widget
+縮圖執行緒 x2 ──PIL 影像──▶ 佇列 ───────────▶ ThumbnailGrid._drain ─▶ PhotoImage、Canvas
+```
+
+- **零阻塞**：掃描、分群、匯出、回復，以及每一次清單與明細查詢，都在背景執行緒；工作執行緒不碰任何 widget。
+- **虛擬滾動**：照片牆的 Canvas 只替「可見的列 ± 2 列」建立物件，照片總數不影響建立的物件數。
+  解碼後的 `PhotoImage` 放在上限 300 張的 LRU；畫面上正在顯示的圖另有強參考，不會因為被淘汰而變空白。
+- **沒有權重也能用**：`factory.resolve_stages()` 只排入跑得起來的階段（權重存在、人臉階段已實作），
+  徽章顯示 `Mock / Weights Missing`。CLI 的 `scan` 則維持「缺權重就明確失敗」。
+- **關閉**：`WM_DELETE_WINDOW` 先發停止訊號，用 `after()` 輪詢等引擎與所有背景執行緒結束、資料庫寫入 flush 之後才銷毀視窗；
+  等待期間介面仍有回應。
+
+**Tk 視窗只能在主執行緒被回收。** Tcl 直譯器必須由建立它的執行緒釋放，而 Tk 物件之間有循環參考，要靠 Python 的
+循環垃圾回收器才收得掉 —— 回收器會在「剛好觸發配置門檻的那條執行緒」執行。如果那是解碼或縮圖的執行緒，
+Tcl 會直接中止整個行程。所以：關閉前等所有可能參考到視窗的背景執行緒結束；`ui/app.py` 在事件迴圈結束後
+停用自動回收、放掉視窗的參考、在主執行緒明確回收一次（`theme.releasing_tk()` 是同一件事的 context manager 版）。
+
 ## 4. 資料庫
 
 完整 DDL 在 [`photosorter/db/schema.sql`](../photosorter/db/schema.sql)。
@@ -176,10 +237,10 @@ scan_sessions ◀── photos ──▶ events
 
 | 資料表 | 用途 | 備註 |
 |---|---|---|
-| `photos` | 一個路徑一列：檔案指紋、EXIF、品質、使用者標記、`process_status` | 刻意不放 BLOB，瀏覽/篩選的掃描才會快 |
+| `photos` | 一個路徑一列：檔案指紋、EXIF、品質、使用者標記、`process_status`、連拍標記（v2：`burst_group_id`、`is_best_shot`、`is_burst_duplicate`） | 刻意不放 BLOB，瀏覽/篩選的掃描才會快 |
 | `embeddings` | SigLIP 768d 向量 | 獨立一張表；`(photo_id, model_id)` 唯一，換模型可並存 |
 | `tags` / `photo_tags` | 標籤定義（含 prompt、文字向量快取、`gate_role`）與關聯 | `source` 區分自動/手動，`is_rejected` 記錄使用者的否決 |
-| `faces` / `persons` | 人臉框、偵測分數、512d 向量、所屬人物 | `assign_src='manual'` 的指派不可被重新分群覆蓋 |
+| `faces` / `persons` | 人臉框、偵測分數、512d 向量、所屬人物 | `assign_src='manual'` 的指派、已命名或 `is_locked=1`（v2）的人物不可被重新分群覆蓋 |
 | `events` | 時間/地點聚類事件 | `is_user_edited=1` 的事件不可被重新聚類覆蓋 |
 | `export_batches` / `export_logs` | 匯出批次與逐筆交易日誌 | write-ahead：先寫 `pending` 再動檔案 |
 | `models` | 向量是哪個模型算的 | 防止換模型後誤用舊向量 |
@@ -251,4 +312,8 @@ scan_sessions ◀── photos ──▶ events
 | 解碼器（方向、DCT 縮放、HEIC、PNG/WebP/灰階/16-bit）、離線地理編碼 | 單元測試 + A 電腦以實際影像檔手動驗證 |
 | ExportManager | `tests/test_export_manager.py`：四種模式、衝突、不覆寫、回復、當機收尾（symlink 在 A 電腦因無權限而略過） |
 | **SigLIP 對真實權重的數值正確性** | **未驗證**（A 電腦沒有權重） |
-| **InsightFace 輸出解碼、人臉對齊、人臉分群** | **未實作** |
+| 人臉分群、事件分群、連拍（`utils/clustering.py`） | `tests/test_stage2_clustering_export.py`：合成的 512 維特徵與時間軸；保護已命名/鎖定/手動指派、增量歸入、重跑冪等。**參數未以真實照片校準** |
+| 四層多視圖歸檔（`core/export_manager.py`） | 同上測試檔：真實檔案操作；COPY / MOVE / HARDLINK 匯出後回復，照片庫逐位元組相同；Sidecar 綁定、撞名、冪等、群組失敗還原。跨磁碟機只以模擬測試 |
+| 桌面介面（`ui/`、`db/queries_ui.py`） | `tests/test_stage3_gui_smoke.py`：真的建立視窗並驅動 —— 導航樹計數、每個節點、照片明細、人物命名鎖定、匯出預覽/執行/回復、重新分群、沒有權重時掃描、掃描中關閉視窗後續掃、虛擬滾動與 LRU。另以截圖人工檢視 sv-ttk 與 clam 深色兩種主題的版面。**沒有用真實照片庫與真實模型操作過** |
+| schema v1 → v2 遷移 | 同上測試檔：把資料庫降回 v1 再開啟，欄位補上且資料不變 |
+| **InsightFace 輸出解碼、人臉對齊** | **未實作** |

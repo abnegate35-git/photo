@@ -46,13 +46,29 @@ log = logging.getLogger(__name__)
 T = TypeVar("T")
 WriteFn = Callable[[sqlite3.Connection], T]
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2                   # schema.sql 目前的版本（全新資料庫直接建成這一版）
 APPLICATION_ID = 0x50485354          # 'PHST'：用來辨識這是不是本工具的資料庫
 _SCHEMA_FILE = Path(__file__).with_name("schema.sql")
 
 #: 之後的結構變更：(目標版本, SQL)。只能往後加，不可修改已發布的項目。
 #: 範例：(2, "ALTER TABLE photos ADD COLUMN caption TEXT;")
-MIGRATIONS: list[tuple[int, str]] = []
+MIGRATIONS: list[tuple[int, str]] = [
+    # v2（第二階段：分群與多視圖匯出）—— 純新增，不更動任何既有欄位。
+    #   persons.is_locked          使用者鎖定的人物群組，重新分群不可覆蓋或拆散
+    #   photos.burst_group_id      連拍群組（同群的照片共用群內最小的 photo id）
+    #   photos.is_best_shot        連拍群組中綜合評分最高的那一張
+    #   photos.is_burst_duplicate  連拍群組中其餘的次佳照片
+    (
+        2,
+        """
+        ALTER TABLE persons ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE photos ADD COLUMN burst_group_id INTEGER;
+        ALTER TABLE photos ADD COLUMN is_best_shot INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE photos ADD COLUMN is_burst_duplicate INTEGER NOT NULL DEFAULT 0;
+        CREATE INDEX idx_photos_burst ON photos(burst_group_id) WHERE burst_group_id IS NOT NULL;
+        """,
+    ),
+]
 
 
 class DatabaseError(RuntimeError):
@@ -221,7 +237,7 @@ class DBManager:
             app_id = conn.execute("PRAGMA application_id").fetchone()[0]
             if app_id != APPLICATION_ID:
                 raise DatabaseError(f"{self.path} 不是 photosorter 的資料庫（application_id={app_id:#x}）")
-        if version > SCHEMA_VERSION + len(MIGRATIONS):
+        if version > SCHEMA_VERSION:
             raise DatabaseError(
                 f"資料庫版本 {version} 比程式支援的新，請更新程式（不會自動降版以免毀損資料）"
             )
